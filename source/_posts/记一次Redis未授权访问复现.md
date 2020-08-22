@@ -1,0 +1,81 @@
+---
+title: 记一次Redis未授权访问复现
+date: 2020-08-22 11:49:22
+tags:
+---
+环境搭建：<br>
+[Ubuntu18.04](https://blog.csdn.net/qq_42372031/article/details/100588245) 192.168.10.131
+用ISO镜像文件创建虚拟机后，如果想删除ISO镜像文件则需要更改以下2点：<br>
+1、在设置->硬件->CD/DVD的连接中更改为使用物理驱动器（自动检测）
+![自动检测](/assets/Redis未授权/自动检测.png)
+2、在设置->硬件->显示器的3D图形中取消勾选加速3D图形（若不更改，容易出现开机黑屏故障）
+![不启用加速3D图形](/assets/Redis未授权/不启用加速3D图形.png)
+
+一、漏洞描述
+
+Redis默认情况下，会绑定在0.0.0.0:6379(在redis3.2之后，redis增加了protected-mode，在这个模式下，非绑定IP或者没有配置密码访问时都会报错)，如果没有进行采用相关的策略，比如添加防火墙规则避免其他非信任来源ip访问等等，这样将会将Redis服务暴露在公网上，如果在没有设置密码认证(默认为空)的情况下，会导致任意用户在可以访问目标服务器的情况下未授权访问Redis以及读取Redis的数据。攻击者在未授权访问Redis的情况下，利用Redis自身的提供的config命令，可以进行写文件操作，攻击者还可以成功将自己的ssh公钥写入目标服务器的/root/.ssh文件的authotrized_keys 文件中，进而可以使用对应私钥直接使用ssh服务器登录目标服务器。
+
+漏洞的产生条件有以下两点:
+
+(1)    Redis绑定在0.0.0.0:6379,且没有进行添加防火墙规则避免其他非信任来源ip访问等相关安全策略，直接暴露在公网
+
+(2)    没有设置密码认证（默认为空）或者弱密码，可以免密码登录redis服务
+
+二、漏洞影响版本
+
+Redis 2.x，3.x，4.x，5.x
+三、漏洞危害
+
+(1) 攻击者无需认证访问到内部数据,可能导致敏感信息泄露，黑客也可以恶意执行flushall来清空所有数据
+
+(2) 攻击者可通过eval执行lua代码，或通过数据备份功能往磁盘写入后门文件
+
+(3) 如果redis以root身份运行，黑客可以给root账户写入SSH公钥文件，直接通过SSH登录目标服务器
+
+四、漏洞环境搭建
+ 靶机:ubuntu 18.04  192.168.10.131
+
+攻击机:kali 192.168.10.128
+1、靶机安装redis服务器(redis-server)
+
+1.1下载redis-4.0.10(其他可利用的版本也可)
+
+```
+sudo wget http://download.redis.io/releases/redis-4.0.10.tar.gz
+sudo tar -zxvf redis-4.0.10.tar.gz
+cd redis-4.0.10/
+```
+在redis-4.0.10文件夹下运行`make`,发现找不到`make`命令报错，
+则安装`make`：
+```
+sudo apt install make
+```
+继续`make`发现gcc报错如下：
+![gcc报错](/assets/Redis未授权/gcc报错.png)
+发现是未安装gcc,安装gcc或者重新建立软连接即可：
+```
+sudo apt install gcc
+sudo ln -s gcc cc
+```
+继续`make`仍然有报错如下：
+![make报错](/assets/Redis未授权/make报错.png)
+使用`make MALLOC=libc`替代`make`解决。<br>
+继续`cd src/`切换到Redis的src文件夹下执行:
+```
+sudo make MALLOC=libc install  
+//如果没有此步，redis-server redis.conf 这个命令是不会执行的。
+```
+至此编译成功：
+![编译成功](/assets/Redis未授权/编译成功.png)
+`redis-server redis.conf`启动服务：
+![启动服务](/assets/Redis未授权/redis-server.png)
+kali安装Redis客户端。
+使用攻击机Redis客户端连接，发现redis的`protected-mode`开启：
+![protected](/assets/Redis未授权/protected.png)
+修改Redis服务端redis.conf配置文件:<br>
+1、关闭`protected-mode`
+![关闭protected](/assets/Redis未授权/关闭protected.png)
+2、绑定本机可以接受访问的IP
+![bindip](/assets/Redis未授权/bindip.png)
+
+###  Redis未授权漏洞利用

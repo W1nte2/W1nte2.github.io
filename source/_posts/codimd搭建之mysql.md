@@ -32,4 +32,5 @@ volumes:
   upload-data: {}
 ```
 ### tips
-此时是用docker搭建codimd,而且mysql数据库也是docker容器，所以you_ip应该是vps的公网地址而不是127.0.0.1。同时，3306端口要放开所有ip访问。
+此时是用docker搭建codimd,而且mysql数据库也是docker容器，所以you_ip应该是vps的公网地址而不是127.0.0.1。同时，3306端口要放开所有ip访问。<br>
+[docker与访问宿主机网络](https://jingsam.github.io/2018/10/16/host-in-docker.html)
